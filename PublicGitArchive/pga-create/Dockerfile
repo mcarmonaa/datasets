@@ -1,9 +1,11 @@
 #==========================
 # Stage 1: build pga-create
 #==========================
-FROM golang:1.12.0-alpine3.9 AS builder
+FROM golang:1.12.1-alpine3.9 AS builder
 
-RUN apk update && apk add --no-cache dumb-init
+RUN apk add --no-cache dumb-init git
+
+RUN go get -u -v github.com/davecgh/go-spew/spew/...
 
 # build pga-create
 ENV PGA_CREATE_REPO=github.com/src-d/datasets/PublicGitArchive/pga-create

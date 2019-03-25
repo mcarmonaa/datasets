@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
+
 	"github.com/briandowns/spinner"
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
@@ -26,14 +28,16 @@ const (
 )
 
 type discoverCommand struct {
-	URL          string `short:"l" long:"url" description:"Link to GHTorrent MySQL dump in tar.gz format. If empty (default), read from stdin if available or find the most recent dump at GHTORRENT_MYSQL ?= http://ghtorrent-downloads.ewi.tudelft.nl/mysql/."`
+	URL          string `short:"l" long:"url" description:"Link to GHTorrent MySQL dump in tar.gz format. If empty (default), it find the most recent dump at GHTORRENT_MYSQL ?= http://ghtorrent-downloads.ewi.tudelft.nl/mysql/."`
+	Stdin        bool   `long:"stdin" description:"read GHTorrent MySQL dump from stdin"`
 	Stars        string `short:"s" long:"stars" default:"data/stars.gz" description:"Output path for the file with the numbers of stars per repository."`
 	Languages    string `short:"g" long:"languages" default:"data/languages.gz" description:"Output path for the gzipped file with the mapping between languages and repositories. May be empty - will be skipped then."`
 	Repositories string `short:"r" long:"repositories" default:"data/repositories.gz" description:"Output path for the gzipped file with the repository names and identifiers."`
 }
 
 func (c *discoverCommand) Execute(args []string) error {
-	discoverRepos(discoveryParameters{
+	discoverRepos(&discoveryParameters{
+		Stdin:         c.Stdin,
 		URL:           c.URL,
 		StarsPath:     c.Stars,
 		LanguagesPath: c.Languages,
@@ -44,6 +48,7 @@ func (c *discoverCommand) Execute(args []string) error {
 }
 
 type discoveryParameters struct {
+	Stdin         bool
 	URL           string
 	StarsPath     string
 	LanguagesPath string
@@ -259,7 +264,7 @@ func findMostRecentMySQLDump(root string) string {
 	return ghturl.ResolveReference(dumpurl).String()
 }
 
-func discoverRepos(params discoveryParameters) {
+func discoverRepos(params *discoveryParameters) {
 	startTime := time.Now()
 
 	for _, p := range []string{
@@ -279,7 +284,7 @@ func discoverRepos(params discoveryParameters) {
 	spin.Start()
 	defer spin.Stop()
 
-	inputFile := dumpReader(params.URL, spin)
+	inputFile := dumpReader(params.Stdin, params.URL, spin)
 	defer inputFile.Close()
 
 	var totalRead int64
@@ -292,6 +297,8 @@ func discoverRepos(params discoveryParameters) {
 	}}
 	gzf, err := gzip.NewReader(inputFile)
 	if err != nil {
+		println("########## gzip reader dump:")
+		spew.Dump(inputFile)
 		fail("opening gzip stream", err)
 	}
 	defer gzf.Close()
@@ -305,10 +312,20 @@ func discoverRepos(params discoveryParameters) {
 	i := 0
 	var stars map[uint32]uint32
 	var ids map[uint32]bool
-	for header, err := tarf.Next(); err != io.EOF; header, err = tarf.Next() {
+	for {
+		header, err := tarf.Next()
+		if err == io.EOF {
+			println("########## tar reader EOF")
+			break
+		}
+
 		if err != nil {
+			println("########## tar reader dump:")
+			spew.Dump(tarf)
+			spew.Dump(err)
 			fail("reading tar.gz", err)
 		}
+
 		i++
 		processed += header.Size
 		isWatchers := strings.HasSuffix(header.Name, "watchers.csv")
@@ -347,24 +364,34 @@ func discoverRepos(params discoveryParameters) {
 		humanize.Bytes(uint64(totalRead)), humanize.Bytes(uint64(processed)), time.Since(startTime))
 }
 
-func dumpReader(url string, spin *spinner.Spinner) io.ReadCloser {
-	if url == "" {
+func dumpReader(stdin bool, url string, spin *spinner.Spinner) io.ReadCloser {
+	println("--- dumpReader")
+	if stdin {
+		println("\tSTDIN")
 		fi, err := os.Stdin.Stat()
 		if err != nil {
 			fail("checking stat on stdin", err)
 		}
 
+		spew.Dump(fi)
 		if fi.Mode()&os.ModeNamedPipe != 0 {
+			println("\treturning os.Stdin")
 			return os.Stdin
 		}
+	}
 
+	if url == "" {
+		println("\tgetting GHTORRENT_MYSQL from env var")
 		envURL := os.Getenv("GHTORRENT_MYSQL")
 		if envURL == "" {
+			println("\tnot found, using default", defaultGhtorrentMySQL)
 			envURL = defaultGhtorrentMySQL
 		}
 
 		spin.Suffix = " " + envURL
+		println("\tfinding most recent mysqldump")
 		url = findMostRecentMySQLDump(envURL)
+		println("\turl:", url)
 	}
 
 	fmt.Printf("\r>> %s\n", url)
@@ -374,5 +401,7 @@ func dumpReader(url string, spin *spinner.Spinner) io.ReadCloser {
 		fail("starting the download of "+url, err)
 	}
 
+	// spew.Dump(response)
+	println("\treturning http response")
 	return response.Body
 }
