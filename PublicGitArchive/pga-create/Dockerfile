@@ -3,9 +3,7 @@
 #==========================
 FROM golang:1.12.1-alpine3.9 AS builder
 
-RUN apk add --no-cache dumb-init git
-
-RUN go get -u -v github.com/davecgh/go-spew/spew/...
+RUN apk add --no-cache dumb-init=1.2.2-r1 git
 
 # build pga-create
 ENV PGA_CREATE_REPO=github.com/src-d/datasets/PublicGitArchive/pga-create

@@ -15,8 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
-
 	"github.com/briandowns/spinner"
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
@@ -297,8 +295,6 @@ func discoverRepos(params *discoveryParameters) {
 	}}
 	gzf, err := gzip.NewReader(inputFile)
 	if err != nil {
-		println("########## gzip reader dump:")
-		spew.Dump(inputFile)
 		fail("opening gzip stream", err)
 	}
 	defer gzf.Close()
@@ -312,17 +308,8 @@ func discoverRepos(params *discoveryParameters) {
 	i := 0
 	var stars map[uint32]uint32
 	var ids map[uint32]bool
-	for {
-		header, err := tarf.Next()
-		if err == io.EOF {
-			println("########## tar reader EOF")
-			break
-		}
-
+	for header, err := tarf.Next(); err != io.EOF; header, err = tarf.Next() {
 		if err != nil {
-			println("########## tar reader dump:")
-			spew.Dump(tarf)
-			spew.Dump(err)
 			fail("reading tar.gz", err)
 		}
 
@@ -371,9 +358,7 @@ func dumpReader(stdin bool, url string, spin *spinner.Spinner) io.ReadCloser {
 			fail("checking stat on stdin", err)
 		}
 
-		spew.Dump(fi)
 		if fi.Mode()&os.ModeNamedPipe != 0 {
-			println("\treturning os.Stdin")
 			return os.Stdin
 		}
 	}
@@ -381,14 +366,11 @@ func dumpReader(stdin bool, url string, spin *spinner.Spinner) io.ReadCloser {
 	if url == "" {
 		envURL := os.Getenv("GHTORRENT_MYSQL")
 		if envURL == "" {
-			println("\tnot found, using default", defaultGhtorrentMySQL)
 			envURL = defaultGhtorrentMySQL
 		}
 
 		spin.Suffix = " " + envURL
-		println("\tfinding most recent mysqldump")
 		url = findMostRecentMySQLDump(envURL)
-		println("\turl:", url)
 	}
 
 	fmt.Printf("\r>> %s\n", url)
@@ -398,7 +380,5 @@ func dumpReader(stdin bool, url string, spin *spinner.Spinner) io.ReadCloser {
 		fail("starting the download of "+url, err)
 	}
 
-	// spew.Dump(response)
-	println("\treturning http response")
 	return response.Body
 }
